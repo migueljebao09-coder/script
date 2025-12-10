@@ -1,382 +1,114 @@
-contents=
---// Cache
+-- SpeedToggle.local.lua
+-- Coloque este LocalScript em StarterPlayerScripts (recomendado) ou em StarterGui.
+-- Cria um botão GUI que ativa/desativa um aumento de velocidade para o jogador local.
 
-local loadstring, game, getgenv, setclipboard = loadstring, game, getgenv, setclipboard
-
---// Loaded check
-
-if getgenv().Aimbot then return end
-
---// Load Aimbot V2 (Raw)
-
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Exunys/Aimbot-V2/main/Resources/Scripts/Raw%20Main.lua"))()
-
---// Variables
-
-local Aimbot = getgenv().Aimbot
-local Settings, FOVSettings, Functions = Aimbot.Settings, Aimbot.FOVSettings, Aimbot.Functions
-
-local Library = loadstring(game:GetObjects("rbxassetid://7657867786")[1].Source)() -- Pepsi's UI Library
-
-local Parts = {"Head", "HumanoidRootPart", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg", "LeftHand", "RightHand", "LeftLowerArm", "RightLowerArm", "LeftUpperArm", "RightUpperArm", "LeftFoot", "LeftLowerLeg", "UpperTorso", "LeftUpperLeg", "RightFoot", "RightLowerLeg", "LowerTorso", "RightUpperLeg"}
-
--- New movement-related services/vars
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
--- store original walkspeed so we can restore it when disabling
-local OriginalWalkspeed = nil
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
--- Ensure new settings fields exist with sensible defaults
-Settings.WalkspeedEnabled = if Settings.WalkspeedEnabled ~= nil then Settings.WalkspeedEnabled else false
-Settings.Walkspeed = if Settings.Walkspeed ~= nil then Settings.Walkspeed else 16
+local player = Players.LocalPlayer
 
---// Frame
+-- Configurações
+local BOOST_SPEED = 40        -- velocidade quando ligado
+local TOGGLE_KEY = Enum.KeyCode.V -- tecla para alternar (opcional)
+local BUTTON_SIZE = UDim2.new(0, 140, 0, 44)
 
-Library.UnloadCallback = Functions.Exit
+-- Estado
+local enabled = false
+local debounce = false
+local defaultSpeed = nil
 
-local MainFrame = Library:CreateWindow({
-	Name = "Aimbot V2",
-	Themeable = {
-		Image = "7059346386",
-		Info = "Made by Exunys\nPowered by Pepsi's UI Library",
-		Credit = false
-	},
-	Background = "",
-	Theme = [[{"__Designer.Colors.section":"ADC7FF","__Designer.Colors.topGradient":"1B242F","__Designer.Settings.ShowHideKey":"Enum.KeyCode.RightShift","__Designer.Colors.otherElementText":"54637D","__Designer.Colors.hoveredOptionBottom":"38667D","__Designer.Colors.hoveredOptionTop":"4885A0","__Designer.Colors.unhoveredOptionTop":"407495","__Designer.Colors.innerBorder":"2C4168","__Designer.Colors.unselectedOption":"4E6EA0","__Designer.Background.UseBackgroundImage":true,"__Designer.Files.WorkspaceFile":"Aimbot V2","__Designer.Colors.main":"23A0FF","__Designer.Colors.outerBorder":"162943","__Designer.Background.ImageColor":"FFFFFF","__Designer.Colors.tabText":"C9DFF1","__Designer.Colors.elementBorder":"111D26","__Designer.Colors.sectionBackground":"0E141C","__Designer.Colors.selectedOption":"558AC2","__Designer.Colors.background":"11182A","__Designer.Colors.bottomGradient":"202B42","__Designer.Background.ImageTransparency":95,"__Designer.Colors.unhoveredOptionBottom":"5471C4","__Designer.Colors.elementText":"7692B8"}]]
-})
+-- Cria GUI no PlayerGui do jogador
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SpeedToggleGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
---// Tabs
+local button = Instance.new("TextButton")
+button.Name = "SpeedToggleButton"
+button.Size = BUTTON_SIZE
+button.Position = UDim2.new(0.5, -BUTTON_SIZE.X.Offset/2, 0.9, -BUTTON_SIZE.Y.Offset/2)
+button.AnchorPoint = Vector2.new(0.5, 0.5)
+button.BackgroundColor3 = Color3.fromRGB(170, 0, 0)
+button.BorderSizePixel = 0
+button.TextColor3 = Color3.new(1,1,1)
+button.Font = Enum.Font.SourceSansBold
+button.TextSize = 20
+button.Text = "Velocidade: Off"
+button.Parent = screenGui
 
-local SettingsTab = MainFrame:CreateTab({
-	Name = "Settings"
-})
-
-local FOVSettingsTab = MainFrame:CreateTab({
-	Name = "FOV Settings"
-})
-
-local FunctionsTab = MainFrame:CreateTab({
-	Name = "Functions"
-})
-
---// Settings - Sections
-
-local Values = SettingsTab:CreateSection({
-	Name = "Values"
-})
-
-local Checks = SettingsTab:CreateSection({
-	Name = "Checks"
-})
-
-local ThirdPerson = SettingsTab:CreateSection({
-	Name = "Third Person"
-})
-
--- New Movement section for walkspeed controls
-local Movement = SettingsTab:CreateSection({
-	Name = "Movement"
-})
-
---// FOV Settings - Sections
-
-local FOV_Values = FOVSettingsTab:CreateSection({
-	Name = "Values"
-})
-
-local FOV_Appearance = FOVSettingsTab:CreateSection({
-	Name = "Appearance"
-})
-
---// Functions - Sections
-
-local FunctionsSection = FunctionsTab:CreateSection({
-	Name = "Functions"
-})
-
---// Settings / Values
-
-Values:AddToggle({
-	Name = "Enabled",
-	Value = Settings.Enabled,
-	Callback = function(New, Old)
-		Settings.Enabled = New
-	end
-}).Default = Settings.Enabled
-
-Values:AddToggle({
-	Name = "Toggle",
-	Value = Settings.Toggle,
-	Callback = function(New, Old)
-		Settings.Toggle = New
-	end
-}).Default = Settings.Toggle
-
-Settings.LockPart = Parts[1]; Values:AddDropdown({
-	Name = "Lock Part",
-	Value = Parts[1],
-	Callback = function(New, Old)
-		Settings.LockPart = New
-	end,
-	List = Parts,
-	Nothing = "Head"
-}).Default = Parts[1]
-
-Values:AddTextbox({ -- Using a Textbox instead of a Keybind because the UI Library doesn't support Mouse inputs like Left Click / Right Click...
-	Name = "Hotkey",
-	Value = Settings.TriggerKey,
-	Callback = function(New, Old)
-		Settings.TriggerKey = New
-	end
-}).Default = Settings.TriggerKey
-
---[[
-Values:AddKeybind({
-	Name = "Hotkey",
-	Value = Settings.TriggerKey,
-	Callback = function(New, Old)
-		Settings.TriggerKey = stringmatch(tostring(New), "Enum%.[UserInputType]*[KeyCode]*%.(.+)")
-	end,
-}).Default = Settings.TriggerKey
-]]
-
-Values:AddSlider({
-	Name = "Sensitivity",
-	Value = Settings.Sensitivity,
-	Callback = function(New, Old)
-		Settings.Sensitivity = New
-	end,
-	Min = 0,
-	Max = 1,
-	Decimals = 2
-}).Default = Settings.Sensitivity
-
---// Settings / Checks
-
-Checks:AddToggle({
-	Name = "Team Check",
-	Value = Settings.TeamCheck,
-	Callback = function(New, Old)
-		Settings.TeamCheck = New
-	end
-}).Default = Settings.TeamCheck
-
-Checks:AddToggle({
-	Name = "Wall Check",
-	Value = Settings.WallCheck,
-	Callback = function(New, Old)
-		Settings.WallCheck = New
-	end
-}).Default = Settings.WallCheck
-
-Checks:AddToggle({
-	Name = "Alive Check",
-	Value = Settings.AliveCheck,
-	Callback = function(New, Old)
-		Settings.AliveCheck = New
-	end
-}).Default = Settings.AliveCheck
-
---// Settings / ThirdPerson
-
-ThirdPerson:AddToggle({
-	Name = "Enable Third Person",
-	Value = Settings.ThirdPerson,
-	Callback = function(New, Old)
-		Settings.ThirdPerson = New
-	end
-}).Default = Settings.ThirdPerson
-
-ThirdPerson:AddSlider({
-	Name = "Sensitivity",
-	Value = Settings.ThirdPersonSensitivity,
-	Callback = function(New, Old)
-		Settings.ThirdPersonSensitivity = New
-	end,
-	Min = 0.1,
-	Max = 5,
-	Decimals = 1
-}).Default = Settings.ThirdPersonSensitivity
-
---// Settings / Movement (Walkspeed)
-
-Movement:AddToggle({
-	Name = "Enable Walkspeed",
-	Value = Settings.WalkspeedEnabled,
-	Callback = function(New, Old)
-		Settings.WalkspeedEnabled = New
-		-- Apply or restore accordingly
-		if New then
-			-- store current walkspeed to restore later
-			local char = LocalPlayer and LocalPlayer.Character
-			if char then
-				local humanoid = char:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					OriginalWalkspeed = OriginalWalkspeed or humanoid.WalkSpeed
-					humanoid.WalkSpeed = Settings.Walkspeed
-				end
-			end
-		else
-			-- restore stored walkspeed if we have it
-			local char = LocalPlayer and LocalPlayer.Character
-			if char then
-				local humanoid = char:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid.WalkSpeed = OriginalWalkspeed or 16
-				end
-			end
-			OriginalWalkspeed = nil
-		end
-	end
-}).Default = Settings.WalkspeedEnabled
-
-Movement:AddSlider({
-	Name = "Walkspeed",
-	Value = Settings.Walkspeed,
-	Callback = function(New, Old)
-		Settings.Walkspeed = New
-		-- update immediately if enabled
-		if Settings.WalkspeedEnabled then
-			local char = LocalPlayer and LocalPlayer.Character
-			if char then
-				local humanoid = char:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid.WalkSpeed = New
-				end
-			end
-		end
-	end,
-	Min = 0,
-	Max = 100,
-	Decimals = 0
-}).Default = Settings.Walkspeed
-
--- Keep walkspeed applied across respawns
-if LocalPlayer then
-	LocalPlayer.CharacterAdded:Connect(function(char)
-		-- small delay to ensure humanoid exists
-		char:WaitForChild("Humanoid", 5)
-		if Settings.WalkspeedEnabled then
-			local humanoid = char:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				OriginalWalkspeed = OriginalWalkspeed or humanoid.WalkSpeed
-				humanoid.WalkSpeed = Settings.Walkspeed
-			end
-		end
-	end)
+-- Função para atualizar a aparência do botão
+local function updateButton()
+    if enabled then
+        button.Text = "Velocidade: On (" .. tostring(BOOST_SPEED) .. ")"
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(0, 170, 0)}):Play()
+    else
+        button.Text = "Velocidade: Off"
+        TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(170, 0, 0)}):Play()
+    end
 end
 
---// FOV Settings / Values
+-- Aplica a velocidade ao Humanoid atual (se existir)
+local function applySpeedToHumanoid(humanoid)
+    if not humanoid then return end
+    -- se defaultSpeed ainda não foi definido, armazena o valor atual do jogo
+    if not defaultSpeed then
+        defaultSpeed = humanoid.WalkSpeed or 16
+    end
+    if enabled then
+        humanoid.WalkSpeed = BOOST_SPEED
+    else
+        humanoid.WalkSpeed = defaultSpeed
+    end
+end
 
-FOV_Values:AddToggle({
-	Name = "Enabled",
-	Value = FOVSettings.Enabled,
-	Callback = function(New, Old)
-		FOVSettings.Enabled = New
-	end
-}).Default = FOVSettings.Enabled
+-- Alterna o estado de velocidade
+local function toggleSpeed()
+    if debounce then return end
+    debounce = true
+    enabled = not enabled
 
-FOV_Values:AddToggle({
-	Name = "Visible",
-	Value = FOVSettings.Visible,
-	Callback = function(New, Old)
-		FOVSettings.Visible = New
-	end
-}).Default = FOVSettings.Visible
+    local character = player.Character
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            applySpeedToHumanoid(humanoid)
+        end
+    end
 
-FOV_Values:AddSlider({
-	Name = "Amount",
-	Value = FOVSettings.Amount,
-	Callback = function(New, Old)
-		FOVSettings.Amount = New
-	end,
-	Min = 10,
-	Max = 300
-}).Default = FOVSettings.Amount
+    updateButton()
+    wait(0.2)
+    debounce = false
+end
 
---// FOV Settings / Appearance
+-- Conecta clique do botão
+button.MouseButton1Click:Connect(toggleSpeed)
 
-FOV_Appearance:AddToggle({
-	Name = "Filled",
-	Value = FOVSettings.Filled,
-	Callback = function(New, Old)
-		FOVSettings.Filled = New
-	end
-}).Default = FOVSettings.Filled
+-- Atalho de teclado (V por padrão)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == TOGGLE_KEY then
+        toggleSpeed()
+    end
+end)
 
-FOV_Appearance:AddSlider({
-	Name = "Transparency",
-	Value = FOVSettings.Transparency,
-	Callback = function(New, Old)
-		FOVSettings.Transparency = New
-	end,
-	Min = 0,
-	Max = 1,
-	Decimal = 1
-}).Default = FOVSettings.Transparency
+-- Ao spawnar o personagem, aplica velocidade conforme o estado atual
+local function onCharacterAdded(character)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if humanoid then
+        -- atualiza defaultSpeed se ainda não foi definido
+        if not defaultSpeed then
+            defaultSpeed = humanoid.WalkSpeed or 16
+        end
+        -- aplica velocidade de acordo com 'enabled'
+        applySpeedToHumanoid(humanoid)
+    end
+end
 
-FOV_Appearance:AddSlider({
-	Name = "Sides",
-	Value = FOVSettings.Sides,
-	Callback = function(New, Old)
-		FOVSettings.Sides = New
-	end,
-	Min = 3,
-	Max = 60
-}).Default = FOVSettings.Sides
+player.CharacterAdded:Connect(onCharacterAdded)
+if player.Character then
+    onCharacterAdded(player.Character)
+end
 
-FOV_Appearance:AddSlider({
-	Name = "Thickness",
-	Value = FOVSettings.Thickness,
-	Callback = function(New, Old)
-		FOVSettings.Thickness = New
-	end,
-	Min = 1,
-	Max = 50
-}).Default = FOVSettings.Thickness
-
-FOV_Appearance:AddColorpicker({
-	Name = "Color",
-	Value = FOVSettings.Color,
-	Callback = function(New, Old)
-		FOVSettings.Color = New
-	end
-}).Default = FOVSettings.Color
-
-FOV_Appearance:AddColorpicker({
-	Name = "Locked Color",
-	Value = FOVSettings.LockedColor,
-	Callback = function(New, Old)
-		FOVSettings.LockedColor = New
-	end
-}).Default = FOVSettings.LockedColor
-
---// Functions / Functions
-
-FunctionsSection:AddButton({
-	Name = "Reset Settings",
-	Callback = function()
-		Functions.ResetSettings()
-		Library.ResetAll()
-	end
-})
-
-FunctionsSection:AddButton({
-	Name = "Restart",
-	Callback = Functions.Restart
-})
-
-FunctionsSection:AddButton({
-	Name = "Exit",
-	Callback = function()
-		Functions:Exit()
-		Library.Unload()
-	end
-})
-
-FunctionsSection:AddButton({
-	Name = "Copy Script Page",
-	Callback = function()
-		setclipboard("https://github.com/Exunys/Aimbot-V2")
-	end
-})
+-- Final: atualiza visual imediatamente
+updateButton()
